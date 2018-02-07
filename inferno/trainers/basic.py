@@ -86,6 +86,7 @@ class Trainer(object):
         self._num_validation_iterations = None
         # We should exclude the zero-th epoch from validation
         self._last_validated_at_epoch = 0
+        self._last_validated_at_iteration = 0
         # This is to allow a callback to trigger a validation by setting
         # trainer.validate_now = True
         self._validation_externally_triggered = False
@@ -563,10 +564,18 @@ class Trainer(object):
                 return False
             else:
                 # If we haven't validated this epoch, check if we should
-                return self._validate_every.match(epoch_count=self._epoch_count)
+                return self._validate_every.match(epoch_count=self._epoch_count,
+                                                  match_zero=False)
         else:
-            return self._validate_every is not None and \
-                   self._validate_every.match(iteration_count=self._iteration_count)
+            # Don't validate if we've done once already this iteration
+            if self._last_validated_at_iteration == self._iteration_count:
+                return False
+            else:
+                # If we haven't validated this iteration, check if we should. The `match_zero` is
+                # redundant, but we'll leave it on anyway.
+                return self._validate_every is not None and \
+                       self._validate_every.match(iteration_count=self._iteration_count,
+                                                  match_zero=False)
 
     @validate_now.setter
     def validate_now(self, value):
@@ -1226,7 +1235,27 @@ class Trainer(object):
         self.callbacks.call(self.callbacks.END_OF_TRAINING_RUN, num_iterations=num_iterations)
         return self
 
-    def validate_for(self, num_iterations=None):
+    def validate_for(self, num_iterations=None, loader_name='validate'):
+        """
+        Validate for a given number of validation (if `num_iterations is not None`)
+        or over the entire (validation) data set.
+
+        Parameters
+        ----------
+        num_iterations : int
+            Number of iterations to validate for. To validate on the entire dataset,
+            leave this as `None`.
+        loader_name : str
+            Name of the data loader to use for validation. 'validate' is the obvious default.
+
+        Returns
+        -------
+        Trainer
+            self.
+        """
+        assert_(loader_name in ['validate', 'test', 'train'],
+                "Invalid `loader_name`: {}".format(loader_name),
+                ValueError)
         # Average over errors
         validation_error_meter = tu.AverageMeter()
         validation_loss_meter = tu.AverageMeter()
@@ -1239,7 +1268,7 @@ class Trainer(object):
 
         # Record the epoch we're validating in
         self._last_validated_at_epoch = self._epoch_count
-
+        self._last_validated_at_iteration = self._iteration_count
         self.callbacks.call(self.callbacks.BEGIN_OF_VALIDATION_RUN,
                             num_iterations=num_iterations,
                             last_validated_at_epoch=self._last_validated_at_epoch)
@@ -1247,7 +1276,7 @@ class Trainer(object):
         # If we don't know num_iterations, we're validating the entire dataset - so we might as
         # well restart the loader now
         if num_iterations is None:
-            self.restart_generators('validate')
+            self.restart_generators(loader_name)
 
         while True:
             if num_iterations is not None and iteration_num > num_iterations:
@@ -1257,13 +1286,13 @@ class Trainer(object):
                                 iteration_num=iteration_num)
 
             try:
-                batch = self.fetch_next_batch('validate',
+                batch = self.fetch_next_batch(loader_name,
                                               restart_exhausted_generators=
                                               num_iterations is not None,
                                               update_batch_count=False,
                                               update_epoch_count_if_generator_exhausted=False)
             except StopIteration:
-                self.print("Validation generator exhausted, breaking.")
+                self.print("{} generator exhausted, breaking.".format(loader_name))
                 break
 
             self.print("Validating iteration {}.".format(iteration_num))
@@ -1271,9 +1300,9 @@ class Trainer(object):
             # Delay SIGINTs till after computation
             with pyu.delayed_keyboard_interrupt():
                 # Wrap
-                batch = self.wrap_batch(batch, from_loader='validate', volatile=True)
+                batch = self.wrap_batch(batch, from_loader=loader_name, volatile=True)
                 # Separate
-                inputs, target = self.split_batch(batch, from_loader='validate')
+                inputs, target = self.split_batch(batch, from_loader=loader_name)
                 # Apply model, compute loss
                 output, loss = self.apply_model_and_loss(inputs, target, backward=False)
             batch_size = target.size(0)
