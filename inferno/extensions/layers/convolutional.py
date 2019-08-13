@@ -188,24 +188,27 @@ def _register_conv_cls(prefix,  fixed=None, default=None):
         initialization_cls = init_map.get(activation_str, OrthogonalWeightsZeroBias)
         if activation_str == "":
             activation = None
-        elif activation_str == "SELU":
+        elif activation_str == "SELU":\
             if hasattr(nn, "SELU"):
                 # Pytorch 0.2: Use built in SELU
                 activation = nn.SELU(inplace=True)
             else:
                 # Pytorch < 0.1.12: Use handmade SELU
                 activation = SELU()
+            fixed={**fixed, 'activation':activation}
         else:
             activation = activation_str
+            fixed={**fixed, 'activation':activation}
+
         register_partial_cls_here(ConvActivation, cls_name,
-            fixed={**fixed, 'activation':activation},
+            fixed=fixed,
             default={**default, 'initialization':initialization_cls()}
         )
         for dim in [1, 2, 3]:
             cls_name = "{}{}{}D".format(prefix,activation_str, dim)
             print("cls_name", cls_name)
             register_partial_cls_here(ConvActivation, cls_name,
-                fixed={**fixed, 'activation':activation, 'dim':dim},
+                fixed={**fixed, 'dim':dim},
                 default={**default, 'initialization':initialization_cls()}
             )
 
