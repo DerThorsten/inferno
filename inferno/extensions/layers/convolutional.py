@@ -37,7 +37,7 @@ __all__ = [
 ]
 _all = __all__
 
-register_partial_cls_here = functools.partial(register_partial_cls, module_dict=globals())
+register_partial_cls_here = functools.partial(register_partial_cls, module_dict=globals(), module='inferno.extensions.layers.convolutional')
 
 
 class ConvActivation(nn.Module):
