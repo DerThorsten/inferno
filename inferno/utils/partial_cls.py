@@ -1,6 +1,6 @@
 import functools
 import sys
-
+import types
 
 def partial_cls(base_cls, name, module, fixed, default):
 
@@ -27,10 +27,12 @@ def partial_cls(base_cls, name, module, fixed, default):
 
 
 
-    return type(name, (base_cls,), {
+    cls = type(name, (base_cls,), {
         '__module__': module,
-        '__init__' : better_partial(base_cls.__init__, fixed=fixed, default=default),
+        #'__init__' : better_partial(base_cls.__init__, fixed=fixed, default=default),
+        '__init__' : functools.partialmethod(base_cls.__init__, **{**fixed, **default})
     })
+    return cls
 
 def register_partial_cls(base_cls, name, module, fixed=None, default=None):
     module_dict = sys.modules[module].__dict__
