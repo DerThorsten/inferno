@@ -16,12 +16,12 @@ def partial_cls(base_cls, name, module, fixed, default):
         if intersection:
             raise TypeError('fixed and default share keys')
 
-        def partial_function(*args, **other_kwargs):
+        def partial_function(self, *args, **other_kwargs):
             intersection = fixed.keys() & other_kwargs.keys()
             if len(intersection) == 1:
                 raise TypeError("partial function of `{}` got unexpected keyword argument(s) '{}'".format(str(f), str(intersection)))
             combined = {**fixed, **other_kwargs, **default}
-            return f(*args, **combined)
+            return f(self, *args, **combined)
 
         return partial_function
 
