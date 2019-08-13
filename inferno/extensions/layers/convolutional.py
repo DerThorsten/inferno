@@ -188,7 +188,7 @@ def _register_conv_cls(prefix,  fixed=None, default=None):
         initialization_cls = init_map.get(activation_str, OrthogonalWeightsZeroBias)
         if activation_str == "":
             activation = None
-        elif activation_str == "SELU":\
+        elif activation_str == "SELU":
             if hasattr(nn, "SELU"):
                 # Pytorch 0.2: Use built in SELU
                 activation = nn.SELU(inplace=True)
