@@ -29,8 +29,8 @@ def partial_cls(base_cls, name, module, fixed, default):
 
     cls = type(name, (base_cls,), {
         '__module__': module,
-        #'__init__' : better_partial(base_cls.__init__, fixed=fixed, default=default),
-        '__init__' : functools.partialmethod(base_cls.__init__, **{**fixed, **default})
+        '__init__' : better_partial(base_cls.__init__, fixed=fixed, default=default),
+        #'__init__' : functools.partialmethod(base_cls.__init__, **{**fixed, **default})
     })
     return cls
 
