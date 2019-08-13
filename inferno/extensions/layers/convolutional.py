@@ -38,7 +38,7 @@ __all__ = [
 ]
 _all = __all__
 
-register_partial_cls_here = functools.partial(register_partial_cls, module_dict=sys.modules[__name__].__dict__, module=__name__)
+register_partial_cls_here = functools.partial(register_partial_cls, module=__name__)
 
 
 class ConvActivation(nn.Module):
@@ -171,7 +171,12 @@ class ConvActivation(nn.Module):
 
 
 
-def _register_conv_cls(prefix, **kwargs):
+def _register_conv_cls(prefix,  fixed=None, default=None):
+    if fixed is None:
+        fixed = {}
+    if default is None:
+        default = {}
+
     # simple conv activation
     activations = ["ReLU", "ELU", "Sigmoid", "SELU", ""]
     init_map = {
@@ -193,22 +198,22 @@ def _register_conv_cls(prefix, **kwargs):
         else:
             activation = activation_str
         register_partial_cls_here(ConvActivation, cls_name,
-            activation=activation,
-            **kwargs)
+            fixed={**fixed, 'activation':activation},
+            default={**default, 'initialization':initialization_cls()}
+        )
         for dim in [1, 2, 3]:
             cls_name = "{}{}{}D".format(prefix,activation_str, dim)
             print("cls_name", cls_name)
             register_partial_cls_here(ConvActivation, cls_name,
-                dim=dim, 
-                activation=activation,
-                initialization=initialization_cls(),
-                **kwargs)
+                fixed={**fixed, 'activation':activation, 'dim':dim},
+                default={**default, 'initialization':initialization_cls()}
+            )
 
 _register_conv_cls("Conv")
-_register_conv_cls("ValidConv",  valid_conv=True)
-_register_conv_cls("Deconv", deconv=True, kernel_size=2, stride=2)
-_register_conv_cls("StridedConv",  stride=2)
-_register_conv_cls("DilatedConv",  dilation=2)
+_register_conv_cls("ValidConv",  fixed=dict(valid_conv=True))
+_register_conv_cls("Deconv", fixed=dict(deconv=True), default=dict(kernel_size=2, stride=2))
+_register_conv_cls("StridedConv",  fixed=dict(stride=2))
+_register_conv_cls("DilatedConv",  fixed=dict(dilation=2))
 
 del _register_conv_cls
 
