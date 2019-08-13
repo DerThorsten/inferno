@@ -1,4 +1,5 @@
 import torch.nn as nn
+import sys
 import functools
 from ..initializers import (
     OrthogonalWeightsZeroBias,
@@ -37,7 +38,7 @@ __all__ = [
 ]
 _all = __all__
 
-register_partial_cls_here = functools.partial(register_partial_cls, module_dict=globals(), module='inferno.extensions.layers.convolutional')
+register_partial_cls_here = functools.partial(register_partial_cls, module_dict=sys.modules[__name__].__dict__, module=__name__)
 
 
 class ConvActivation(nn.Module):
