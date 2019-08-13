@@ -34,8 +34,8 @@ def partial_cls(base_cls, name, module, fixed, default):
     })
     return cls
 
-def register_partial_cls(base_cls, name, module, fixed=None, default=None):
-    module_dict = sys.modules[module].__dict__
+def register_partial_cls(base_cls, name, module_dict, module, fixed=None, default=None):
+    #module_dict = sys.modules[module].__dict__
     generatedClass = partial_cls(base_cls=base_cls,name=name, module=module,
         fixed=fixed, default=default)
     module_dict[generatedClass.__name__] = generatedClass
@@ -72,7 +72,7 @@ if __name__ == "__main__":
     b = Conv2D(activation='ELU')
 
     for dim in [1,2]:
-        register_partial_cls(Conv, 'Conv{}D'.format(dim),__name__, fixed=dict(dim=2))
+        register_partial_cls(Conv, 'Conv{}D'.format(dim),globals(), __name__, fixed=dict(dim=2))
     
     b = Conv1D(activation='ELU')
     b = Conv2D(activation='ELU')
