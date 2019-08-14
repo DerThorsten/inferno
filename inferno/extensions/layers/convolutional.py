@@ -38,7 +38,7 @@ __all__ = [
 ]
 _all = __all__
 
-register_partial_cls_here = functools.partial(register_partial_cls, module_dict=globals(), module='inferno.extensions.layers.convolutional')
+register_partial_cls_here = functools.partial(register_partial_cls, module=__name__)
 
 
 class ConvActivation(nn.Module):
@@ -171,9 +171,9 @@ class ConvActivation(nn.Module):
 
 
 
-def _register_conv_cls(prefix,  fixed=None, default=None):
-    if fixed is None:
-        fixed = {}
+def _register_conv_cls(prefix,  fix=None, default=None):
+    if fix is None:
+        fix = {}
     if default is None:
         default = {}
 
@@ -188,7 +188,7 @@ def _register_conv_cls(prefix,  fixed=None, default=None):
         initialization_cls = init_map.get(activation_str, OrthogonalWeightsZeroBias)
         if activation_str == "":
             activation = None
-            _fixed = {**fixed}
+            _fix = {**fix}
             _default = {'activation':None}
         elif activation_str == "SELU":
             if hasattr(nn, "SELU"):
@@ -197,30 +197,29 @@ def _register_conv_cls(prefix,  fixed=None, default=None):
             else:
                 # Pytorch < 0.1.12: Use handmade SELU
                 activation = SELU()
-            _fixed={**fixed, 'activation':activation}
+            _fix={**fix, 'activation':activation}
             _default = {**default}
         else:
             activation = activation_str
-            _fixed={**fixed, 'activation':activation}
+            _fix={**fix, 'activation':activation}
             _default = {**default}
 
         register_partial_cls_here(ConvActivation, cls_name,
-            fixed=_fixed,
+            fix=_fix,
             default={**_default, 'initialization':initialization_cls()}
         )
         for dim in [1, 2, 3]:
             cls_name = "{}{}{}D".format(prefix,activation_str, dim)
-            print("cls_name", cls_name)
             register_partial_cls_here(ConvActivation, cls_name,
-                fixed={**_fixed, 'dim':dim},
+                fix={**_fix, 'dim':dim},
                 default={**_default, 'initialization':initialization_cls()}
             )
 
 _register_conv_cls("Conv")
-_register_conv_cls("ValidConv",  fixed=dict(valid_conv=True))
-_register_conv_cls("Deconv", fixed=dict(deconv=True), default=dict(kernel_size=2, stride=2))
-_register_conv_cls("StridedConv",  fixed=dict(stride=2))
-_register_conv_cls("DilatedConv",  fixed=dict(dilation=2))
+_register_conv_cls("ValidConv",  fix=dict(valid_conv=True))
+_register_conv_cls("Deconv", fix=dict(deconv=True), default=dict(kernel_size=2, stride=2))
+_register_conv_cls("StridedConv",  fix=dict(stride=2))
+_register_conv_cls("DilatedConv",  fix=dict(dilation=2))
 
 del _register_conv_cls
 
