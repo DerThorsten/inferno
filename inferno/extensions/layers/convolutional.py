@@ -12,26 +12,6 @@ from ...utils.exceptions import assert_, ShapeError
 from ...utils.partial_cls import register_partial_cls
 
 __all__ = [
-    "ConvActivation",
-    "ConvELU2D",
-    "ConvELU3D",
-    "ConvSigmoid2D",
-    "ConvSigmoid3D",
-    "DeconvELU2D",
-    "DeconvELU3D",
-    "StridedConvELU2D",
-    "StridedConvELU3D",
-    "DilatedConvELU2D",
-    "DilatedConvELU3D",
-    "Conv2D",
-    "Conv3D",
-    "BNReLUConv2D",
-    "BNReLUConv3D",
-    "BNReLUDepthwiseConv2D",
-    "ConvSELU2D",
-    "ConvSELU3D",
-    "ConvReLU2D",
-    "ConvReLU3D",
     "BNReLUDilatedConv2D",
     "DilatedConv2D",
     "GlobalConv2D",
@@ -185,6 +165,7 @@ def _register_conv_cls(prefix,  fix=None, default=None):
     }
     for activation_str in activations:
         cls_name = cls_name = "{}{}".format(prefix,activation_str)
+        __all__.append(cls_name)
         initialization_cls = init_map.get(activation_str, OrthogonalWeightsZeroBias)
         if activation_str == "":
             activation = None
@@ -210,6 +191,7 @@ def _register_conv_cls(prefix,  fix=None, default=None):
         )
         for dim in [1, 2, 3]:
             cls_name = "{}{}{}D".format(prefix,activation_str, dim)
+            __all__.append(cls_name)
             register_partial_cls_here(ConvActivation, cls_name,
                 fix={**_fix, 'dim':dim},
                 default={**_default, 'initialization':initialization_cls()}
