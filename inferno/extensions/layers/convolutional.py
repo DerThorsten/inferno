@@ -7,6 +7,7 @@ from ..initializers import (
     SELUWeightsZeroBias,
 )
 from ..initializers import Initializer
+from .normalization import BatchNormND
 from .activations import SELU
 from ...utils.exceptions import assert_, ShapeError
 from ...utils.partial_cls import register_partial_cls
@@ -50,6 +51,10 @@ class ConvActivation(nn.Module):
         self.dim = dim
         # Check if depthwise
         if depthwise:
+
+            # We know that in_channels == out_channels, but we also want a consistent API.
+            # As a compromise, we allow that out_channels be None or 'auto'.
+            out_channels = in_channels if out_channels in [None, "auto"] else out_channel
             assert_(
                 in_channels == out_channels,
                 "For depthwise convolutions, number of input channels (given: {}) "
@@ -148,10 +153,36 @@ class ConvActivation(nn.Module):
         ]
         return tuple(padding)
 
+# for consistency
+ConvActivationND = ConvActivation
 
 
+# noinspection PyUnresolvedReferences
+class _BNReLUSomeConv(object):
+    def forward(self, input):
+        normed = self.batchnorm(input)
+        activated = self.activation(normed)
+        conved = self.conv(activated)
+        return conved
 
-def _register_conv_cls(prefix,  fix=None, default=None):
+class BNReLUConvBaseND(_BNReLUSomeConv, ConvActivation):
+    def __init__(self, in_channels, out_channels, kernel_size, dim, stride=1, dilation=1, deconv=False):
+
+        super(BNReLUConvBaseND, self).__init__(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            dim=dim,
+            stride=stride,
+            activation=nn.ReLU(inplace=True),
+            dilation=dilation,
+            deconv=deconv,
+            initialization=KaimingNormalWeightsZeroBias(0),
+        )
+        self.batchnorm = BatchNormND(dim, in_channels)
+
+
+def _register_conv_cls(conv_name,  fix=None, default=None):
     if fix is None:
         fix = {}
     if default is None:
@@ -164,7 +195,7 @@ def _register_conv_cls(prefix,  fix=None, default=None):
         "SELU": SELUWeightsZeroBias
     }
     for activation_str in activations:
-        cls_name = cls_name = "{}{}".format(prefix,activation_str)
+        cls_name = cls_name = "{}{}ND".format(conv_name,activation_str)
         __all__.append(cls_name)
         initialization_cls = init_map.get(activation_str, OrthogonalWeightsZeroBias)
         if activation_str == "":
@@ -172,12 +203,7 @@ def _register_conv_cls(prefix,  fix=None, default=None):
             _fix = {**fix}
             _default = {'activation':None}
         elif activation_str == "SELU":
-            if hasattr(nn, "SELU"):
-                # Pytorch 0.2: Use built in SELU
-                activation = nn.SELU(inplace=True)
-            else:
-                # Pytorch < 0.1.12: Use handmade SELU
-                activation = SELU()
+            activation = nn.SELU(inplace=True)
             _fix={**fix, 'activation':activation}
             _default = {**default}
         else:
@@ -190,145 +216,47 @@ def _register_conv_cls(prefix,  fix=None, default=None):
             default={**_default, 'initialization':initialization_cls()}
         )
         for dim in [1, 2, 3]:
-            cls_name = "{}{}{}D".format(prefix,activation_str, dim)
+            cls_name = "{}{}{}D".format(conv_name,activation_str, dim)
             __all__.append(cls_name)
             register_partial_cls_here(ConvActivation, cls_name,
                 fix={**_fix, 'dim':dim},
                 default={**_default, 'initialization':initialization_cls()}
             )
 
+def _register_bnr_conv_cls(conv_name,  fix=None, default=None):
+    if fix is None:
+        fix = {}
+    if default is None:
+        default = {}
+    for dim in [1, 2, 3]:
+
+        cls_name = "BNReLU{}ND".format(conv_name)
+        __all__.append(cls_name)
+        register_partial_cls_here(BNReLUConvBaseND, cls_name,fix=fix,default=default)
+
+        for dim in [1, 2, 3]:
+            cls_name = "BNReLU{}{}D".format(conv_name, dim)
+            __all__.append(cls_name)
+            register_partial_cls_here(BNReLUConvBaseND, cls_name,
+                fix={**fix, 'dim':dim},
+                default=default)
+
+# conv classes
 _register_conv_cls("Conv")
 _register_conv_cls("ValidConv",  fix=dict(valid_conv=True))
 _register_conv_cls("Deconv", fix=dict(deconv=True), default=dict(kernel_size=2, stride=2))
 _register_conv_cls("StridedConv",  fix=dict(stride=2))
 _register_conv_cls("DilatedConv",  fix=dict(dilation=2))
 
+# BatchNormRelu classes
+_register_bnr_conv_cls("Conv", fix=dict(deconv=False))
+_register_bnr_conv_cls("Deconv", fix=dict(deconv=True))
+_register_bnr_conv_cls("DilatedConv", fix=dict(deconv=False), default=dict(dilation=2))
+_register_bnr_conv_cls("DepthwiseConv", fix=dict(deconv=False, depthwise=True), default=dict(dilation=2, out_channels='auto'))
+
 del _register_conv_cls
+del _register_bnr_conv_cls
 
-
-
-# noinspection PyUnresolvedReferences
-class _BNReLUSomeConv(object):
-    def forward(self, input):
-        normed = self.batchnorm(input)
-        activated = self.activation(normed)
-        conved = self.conv(activated)
-        return conved
-
-
-class BNReLUConv2D(_BNReLUSomeConv, ConvActivation):
-    """
-    2D BN-ReLU-Conv layer with 'SAME' padding and He weight initialization.
-    """
-
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1):
-        super(BNReLUConv2D, self).__init__(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=kernel_size,
-            dim=2,
-            stride=stride,
-            activation=nn.ReLU(inplace=True),
-            initialization=KaimingNormalWeightsZeroBias(0),
-        )
-        self.batchnorm = nn.BatchNorm2d(in_channels)
-
-
-class BNReLUDilatedConv2D(_BNReLUSomeConv, ConvActivation):
-    """
-    2D dilated convolutional layer with 'SAME' padding, Batch norm,  Relu and He
-    weight initialization.
-    """
-
-    def __init__(self, in_channels, out_channels, kernel_size, dilation=2):
-        super(BNReLUDilatedConv2D, self).__init__(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=kernel_size,
-            dilation=dilation,
-            dim=2,
-            activation=nn.ReLU(inplace=True),
-            initialization=KaimingNormalWeightsZeroBias(0),
-        )
-        self.batchnorm = nn.BatchNorm2d(in_channels)
-
-
-class BNReLUConv3D(_BNReLUSomeConv, ConvActivation):
-    """
-    3D BN-ReLU-Conv layer with 'SAME' padding and He weight initialization.
-    """
-
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1):
-        super(BNReLUConv3D, self).__init__(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=kernel_size,
-            dim=3,
-            stride=stride,
-            activation=nn.ReLU(inplace=True),
-            initialization=KaimingNormalWeightsZeroBias(0),
-        )
-        self.batchnorm = nn.BatchNorm3d(in_channels)
-
-
-class BNReLUDeconv2D(_BNReLUSomeConv, ConvActivation):
-    """
-    2D BN-ReLU-Deconv layer with He weight initialization and (default) stride 2.
-    """
-
-    def __init__(self, in_channels, out_channels, kernel_size, stride=2):
-        super(BNReLUDeconv2D, self).__init__(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=kernel_size,
-            dim=2,
-            stride=stride,
-            deconv=True,
-            activation=nn.ReLU(inplace=True),
-            initialization=KaimingNormalWeightsZeroBias(0),
-        )
-        self.batchnorm = nn.BatchNorm2d(in_channels)
-
-
-class BNReLUDeconv3D(_BNReLUSomeConv, ConvActivation):
-    """
-    3D BN-ReLU-Deconv layer with He weight initialization and (default) stride 2.
-    """
-
-    def __init__(self, in_channels, out_channels, kernel_size, stride=2):
-        super(BNReLUDeconv3D, self).__init__(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=kernel_size,
-            dim=3,
-            stride=stride,
-            deconv=True,
-            activation=nn.ReLU(inplace=True),
-            initialization=KaimingNormalWeightsZeroBias(0),
-        )
-        self.batchnorm = nn.BatchNorm2d(in_channels)
-
-
-class BNReLUDepthwiseConv2D(_BNReLUSomeConv, ConvActivation):
-    """
-    2D BN-ReLU-Conv layer with 'SAME' padding, He weight initialization and depthwise convolution.
-    Note that depthwise convolutions require `in_channels == out_channels`.
-    """
-
-    def __init__(self, in_channels, out_channels, kernel_size):
-        # We know that in_channels == out_channels, but we also want a consistent API.
-        # As a compromise, we allow that out_channels be None or 'auto'.
-        out_channels = in_channels if out_channels in [None, "auto"] else out_channels
-        super(BNReLUDepthwiseConv2D, self).__init__(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=kernel_size,
-            dim=2,
-            depthwise=True,
-            activation=nn.ReLU(inplace=True),
-            initialization=KaimingNormalWeightsZeroBias(0),
-        )
-        self.batchnorm = nn.BatchNorm2d(in_channels)
 
 
 
@@ -396,3 +324,99 @@ class GlobalConv2D(nn.Module):
         if self.batchnorm is not None:
             out = self.batchnorm(out)
         return out
+
+
+class GlobalConv3D(nn.Module):
+    """From https://arxiv.org/pdf/1703.02719.pdf
+    Main idea: we can have a bigger kernel size computationally acceptable
+    if we separate 3D-conv in 3 1D-convs """
+    def __init__(self, in_channels, out_channels, kernel_size, local_conv_type,
+                 activation=None, use_BN=False, **kwargs):
+        super(GlobalConv3D, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        assert isinstance(kernel_size, (int, list, tuple))
+        if isinstance(kernel_size, int):
+           kernel_size = (kernel_size,)*3
+        self.kwargs=kwargs
+
+        self.conv1a = local_conv_type(in_channels=self.in_channels,
+                                      out_channels=self.out_channels,
+                                      kernel_size=(kernel_size[0], 1, 1), **kwargs)
+
+        self.conv1b = local_conv_type(in_channels=self.out_channels,
+                                      out_channels=self.out_channels,
+                                      kernel_size=(1, kernel_size[1], 1), **kwargs)
+
+        self.conv1c = local_conv_type(in_channels=self.out_channels,
+                                      out_channels=self.out_channels,
+                                      kernel_size=(1, 1, kernel_size[2]), **kwargs)
+
+
+        self.conv2a = local_conv_type(in_channels=self.in_channels,
+                                      out_channels=self.out_channels,
+                                      kernel_size=(kernel_size[0], 1, 1), **kwargs)
+
+        self.conv2b = local_conv_type(in_channels=self.out_channels,
+                                      out_channels=self.out_channels,
+                                      kernel_size=(1, kernel_size[1], 1), **kwargs)
+
+        self.conv2c = local_conv_type(in_channels=self.out_channels,
+                                      out_channels=self.out_channels,
+                                      kernel_size=(1, 1, kernel_size[2]), **kwargs)
+
+
+        self.conv3a = local_conv_type(in_channels=self.in_channels,
+                                      out_channels=self.out_channels,
+                                      kernel_size=(kernel_size[0], 1, 1), **kwargs)
+
+        self.conv3b = local_conv_type(in_channels=self.out_channels,
+                                      out_channels=self.out_channels,
+                                      kernel_size=(1, kernel_size[1], 1), **kwargs)
+
+        self.conv3c = local_conv_type(in_channels=self.out_channels,
+                                      out_channels=self.out_channels,
+                                      kernel_size=(1, 1, kernel_size[2]), **kwargs)
+
+
+
+
+        if use_BN:
+            self.batchnorm = nn.BatchNorm3d(self.out_channels)
+        else:
+            self.batchnorm = None
+        self.activation = activation
+
+    def forward(self, input_):
+        out1 = self.conv1a(input_)
+        out1 = self.conv1b(out1)
+        out1 = self.conv1c(out1)
+
+        out2 = self.conv2a(input_)
+        out2 = self.conv2b(out2)
+        out2 = self.conv2c(out2)
+
+        out3 = self.conv3a(input_)
+        out3 = self.conv3b(out3)
+        out3 = self.conv3c(out3)
+
+        out = out1 + out2 + out3
+        if self.activation is not None:
+            out = self.activation(out)
+        if self.batchnorm is not None:
+            out = self.batchnorm(out)
+        return out
+
+
+class GlobalConvND(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, dim, local_conv_type,
+                 activation=None, use_BN=False, **kwargs):
+    assert dim in [2,3]
+    gc_cls = getattr(globals(), 'GlobalConv{}D'.format(dim))
+    self.gc = gc_cls(in_channels=in_channels, out_channels=out_channels,
+                     kernel_size=kernel_size, local_conv_type=local_conv_type,
+                     activation=activation, use_BN=use_BN, **kwargs)
+
+    def forward(self, x):
+        return self.gc(x)
