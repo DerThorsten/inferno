@@ -232,7 +232,7 @@ class TensorboardLogger(Logger):
             return
 
         # Check whether object is a scalar
-        if tu.is_scalar_tensor(object_) and allow_scalar_logging:]
+        if tu.is_scalar_tensor(object_) and allow_scalar_logging:
             # Log scalar
             value = tu.unwrap(object_.float(), extract_item=True)
             self.log_scalar(tag, value, step=self.trainer.iteration_count)
