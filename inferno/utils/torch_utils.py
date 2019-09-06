@@ -70,6 +70,9 @@ def is_label_image_or_volume_tensor(object_):
 def is_matrix_tensor(object_):
     return is_tensor(object_) and object_.dim() == 2
 
+def is_embedding_matrix_tensor(object_):
+    return is_tensor(object_) and object_.dim() == 2 and object_.size(1) == 1
+
 
 def is_scalar_tensor(object_):
     return is_tensor(object_) and object_.dim() <= 1 and object_.numel() == 1

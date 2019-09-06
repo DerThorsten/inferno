@@ -25,6 +25,7 @@ class TensorboardLogger(Logger):
 
     def __init__(self, log_directory=None,
                  log_scalars_every=None, log_images_every=None, log_histograms_every=None,
+                 log_embedding_every=None,
                  send_image_at_batch_indices='all', send_image_at_channel_indices='all',
                  send_volume_at_z_indices='mid'):
         """
@@ -59,6 +60,7 @@ class TensorboardLogger(Logger):
         self._log_scalars_every = None
         self._log_images_every = None
         self._log_histograms_every = None
+        self._log_embedding_every = None
         self._writer = None
         self._config = {'image_batch_indices': send_image_at_batch_indices,
                         'image_channel_indices': send_image_at_channel_indices,
@@ -80,6 +82,9 @@ class TensorboardLogger(Logger):
         if log_histograms_every is not None:
             self.log_histograms_every = log_histograms_every
 
+        if log_embedding_every is not None:
+            self.log_embedding_every = log_embedding_every
+
     @property
     def writer(self):
         if self._writer is None:
@@ -95,6 +100,25 @@ class TensorboardLogger(Logger):
     @log_scalars_every.setter
     def log_scalars_every(self, value):
         self._log_scalars_every = tru.Frequency.build_from(value)
+
+
+    @property
+    def log_embeddings_every(self):
+        if self._log_embeddings_every is None:
+            self._log_embeddings_every = tru.Frequency(1, 'iterations')
+        return self._log_embeddings_every
+
+    @log_embeddings_every.setter
+    def log_embeddings_every(self, value):
+        self._log_embeddings_every = tru.Frequency.build_from(value)
+
+    @property
+    def log_embeddings_now(self):
+        # Using persistent=True in a property getter is probably not a very good idea...
+        # We need to make sure that this getter is called only once per callback-call.
+        return self.log_embeddings_every.match(iteration_count=self.trainer.iteration_count,
+                                            epoch_count=self.trainer.epoch_count,
+                                            persistent=True)
 
     @property
     def log_scalars_now(self):
@@ -121,6 +145,8 @@ class TensorboardLogger(Logger):
         return self.log_images_every.match(iteration_count=self.trainer.iteration_count,
                                            epoch_count=self.trainer.epoch_count,
                                            persistent=True)
+
+
 
     @property
     def log_histograms_every(self):
@@ -225,11 +251,14 @@ class TensorboardLogger(Logger):
             # Log histograms
             values = tu.unwrap(object_, as_numpy=True)
             self.log_histogram(tag, values, self.trainer.iteration_count)
+        elif tu.is_embedding_matrix_tensor(object_):
+            self.log_embedding(tag, values)
         else:
             # Object is neither a scalar nor an image nor a vector, there's nothing we can do
             if tu.is_tensor(object_) and self._DEBUG:
                 # Throw a warning when in debug mode.
                 warnings.warn("Unsupported attempt to log tensor `{}` of shape `{}`".format(tag, object_.size()))
+
 
     def end_of_training_iteration(self, **_):
         log_scalars_now = self.log_scalars_now
@@ -441,8 +470,11 @@ class TensorboardLogger(Logger):
 
     def log_histogram(self, tag, values, step, bins=1000):
         """Logs the histogram of a list/vector of values."""
-        # TODO
-        raise NotImplementedError
+        self._writer.add_histogram(tag,values, bins=bins)
+
+    def log_embedding(self, tag, values):
+        """Logs the histogram of a list/vector of values."""
+        self._writer.add_histogram(tag, mat=values)
 
     def get_config(self):
         # Apparently, some SwigPyObject objects cannot be pickled - so we need to build the
