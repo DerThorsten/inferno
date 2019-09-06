@@ -477,7 +477,7 @@ class TensorboardLogger(Logger):
     def log_matrix(self, tag, values, step):
         """Logs the histogram of a list/vector of values."""
         if self._writer is not None:
-            self._writer.add_matrix(mat=values, global_step=step)
+            self._writer.add_embedding(mat=values, global_step=step)
 
     def get_config(self):
         # Apparently, some SwigPyObject objects cannot be pickled - so we need to build the
